@@ -57,39 +57,6 @@ package("zydis")
     end)
 package_end()
 
-package("funchook")
-    add_deps("cmake", "zydis")
-
-    set_sourcedir(path.join(os.scriptdir(), "3rd/funchook"))
-
-    if is_os("windows") then
-        add_syslinks("psapi.lib")
-    end
-
-    on_load(function (package)
-        package:add("deps", "zycore")
-        package:add("deps", "zydis")
-    end)
-
-    on_install(function (package)
-        local configs = {}
-        table.insert(configs, "-DCMAKE_BUILD_TYPE=" .. (package:debug() and "Debug" or "Release"))
-        table.insert(configs, "-DBUILD_SHARED_LIBS=OFF")
-        table.insert(configs, "-DFUNCHOOK_DISASM=zydis")
-        table.insert(configs, "-DFUNCHOOK_BUILD_SHARED=OFF")
-        table.insert(configs, "-DFUNCHOOK_BUILD_STATIC=ON")
-        import("package.tools.cmake").install(package, configs)
-    end)
-
-    on_test(function (package)
-        assert(package:has_cfuncs("funchook_create", {includes = "funchook.h"}))
-        assert(package:has_cfuncs("funchook_prepare_with_params", {includes = "funchook.h"}))
-        assert(package:has_cfuncs("funchook_install", {includes = "funchook.h"}))
-        assert(package:has_cfuncs("funchook_uninstall", {includes = "funchook.h"}))
-        assert(package:has_cfuncs("funchook_destroy", {includes = "funchook.h"}))
-        assert(package:has_cfuncs("funchook_error_message", {includes = "funchook.h"}))
-    end)
-package_end()
 
 package("fmt")
     add_deps("cmake")
@@ -119,22 +86,11 @@ package("spdlog")
     end)
 package_end()
 
-package("wasmtime")
-    add_deps("cmake")
-    set_sourcedir(path.join(os.scriptdir(), "3rd/wasmtime/crates/c-api"))
 
-    on_install(function (package)
-        local configs = {}
-        table.insert(configs, "-DCMAKE_BUILD_TYPE=" .. (package:debug() and "Debug" or "Release"))
-        table.insert(configs, "-DBUILD_SHARED_LIBS=OFF")
-        table.insert(configs, "-DWASMTIME_USER_CARGO_BUILD_OPTIONS=--all-features")
-        import("package.tools.cmake").install(package, configs)
-    end)
-package_end()
 
-add_requires("funchook")
+
 add_requires("spdlog")
-add_requires("wasmtime")
+
 
 target("pal-plugin-loader")
     set_kind("shared")
@@ -145,9 +101,7 @@ target("pal-plugin-loader")
     add_defines("ZYDIS_STATIC_BUILD")
     add_defines("WASM_API_EXTERN=inline")
 
-    add_packages("funchook")
     add_packages("spdlog")
-    add_packages("wasmtime")
 
     if is_os("windows") then
         add_syslinks("ws2_32.lib")
@@ -157,11 +111,16 @@ target("pal-plugin-loader")
         add_syslinks("bcrypt.lib")
         add_syslinks("ole32.lib")
         add_syslinks("shell32.lib")
+        -- ���� /bigobj �ͺ����ض�����ı���ѡ��
+        add_cxflags("/bigobj", "/wd4369", {force = true})
+        add_cxxflags("/bigobj", "/wd4369", {force = true})
     end
 
     add_includedirs(path.join(os.scriptdir(), "include/sdk/sdk"))
     add_includedirs(path.join(os.scriptdir(), "include/sdk"))
     add_includedirs(path.join(os.scriptdir(), "include"))
+    add_includedirs("C:/boost")  -- �滻Ϊ���Boost��װ·��
+
 
     if is_os("windows") then
         add_includedirs(path.join(os.scriptdir(), "include/os/windows/sdk"))
@@ -171,7 +130,8 @@ target("pal-plugin-loader")
 
     add_files("src/*.cpp")
     add_files("src/sdk/*.cpp")
-    add_files("src/hooks/*.cpp")
+
+
 
 
 
