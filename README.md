@@ -13,3 +13,29 @@ PalWorld-Server-Unoffical-Api 是一个第三方的帕鲁世界 API， 其目标
 ***目前项目还在非常早期的开发中， 其代码可能会大规模重写， 所以暂时不会公开源代码***
 
 目前我非常希望听到大家的意见来决定有什么功能需要添加，请在 Issuse 中提出你的想法！
+
+# 改动
+
+尝试加了一个http上去
+
+# 编译
+
+本仓库仅是储存个人改动
+
+首先克隆原始项目 verofess的 PalWorld-Server-Unoffical-Api
+
+首先，去掉wasmtime和funchook的 在 xmake里
+
+然后，补fmt 和spdlog 在3rd
+
+然后chcp 65001
+
+然后修改 xmake lua 
+
+   -- 添加 /bigobj 和忽略特定警告的编译选项
+
+        add_cxflags("/bigobj", "/wd4369", {force = true})
+
+        add_cxxflags("/bigobj", "/wd4369", {force = true})
+
+然后xmake
