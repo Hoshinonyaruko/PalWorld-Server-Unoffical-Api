@@ -2,6 +2,10 @@
 #include "spdlog/spdlog.h"
 #include "sdk.hpp"
 
+#include "hooks.h"
+#include "utils.h"
+#include "engine_functions.h"
+
 #include <cstdio>
 #include <iostream>
 #include <boost/asio.hpp>
@@ -9,7 +13,17 @@
 #include <string>
 #include <windows.h>
 
-typedef void (*ForceGarbageCollectionType)(SDK::UEngine *engine, bool bForcePurge);
+ForceGarbageCollectionType   ForceGarbageCollection   = nullptr;
+LowLevelGetRemoteAddressType LowLevelGetRemoteAddress = nullptr;
+KickPlayerType               KickPlayer               = nullptr;
+GetEmptyFTextType            GetEmptyFText            = nullptr;
+
+std::string str_tolower(std::string s) {
+    std::transform(s.begin(), s.end(), s.begin(), [](unsigned char c) {
+        return std::tolower(c);
+    });
+    return s;
+}
 
 namespace net   = boost::asio;  // from <boost/asio.hpp>
 namespace beast = boost::beast; // from <boost/beast.hpp>
@@ -36,7 +50,7 @@ std::wstring utf8_to_utf16(const std::string &utf8) {
 }
 
 std::string wide_to_narrow(const std::wstring &wide) {
-    // Ê¹ÓÃCP_ACP½øÐÐ×ª»»£¬½«¿í×Ö·û´®×ª»»ÎªANSI±àÂëµÄÕ­×Ö·û´®
+    // Ê¹ï¿½ï¿½CP_ACPï¿½ï¿½ï¿½ï¿½×ªï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ö·ï¿½ï¿½ï¿½×ªï¿½ï¿½ÎªANSIï¿½ï¿½ï¿½ï¿½ï¿½Õ­ï¿½Ö·ï¿½ï¿½ï¿½
     int         narrow_size = WideCharToMultiByte(CP_ACP, 0, wide.c_str(), -1, nullptr, 0, nullptr, nullptr);
     std::string narrow(narrow_size, 0);
     WideCharToMultiByte(CP_ACP, 0, wide.c_str(), -1, &narrow[0], narrow_size, nullptr, nullptr);
@@ -48,9 +62,9 @@ std::string get_query_parameter(const std::string &query, const std::string &key
     size_t      start_pos      = query.find(key_with_equal);
 
     if (start_pos == std::string::npos)
-        return ""; // Ã»ÕÒµ½²ÎÊý
+        return ""; // Ã»ï¿½Òµï¿½ï¿½ï¿½ï¿½ï¿½
 
-    // Ìø¹ýkeyºÍµÈºÅ
+    // ï¿½ï¿½ï¿½ï¿½keyï¿½ÍµÈºï¿½
     start_pos += key_with_equal.length();
     size_t end_pos = query.find("&", start_pos);
 
@@ -93,14 +107,14 @@ void handle_request(http::request<http::string_body> &&req, http::response<http:
         return;
     }
 
-    // È·¶¨ÇëÇóµÄÂ·ÓÉ
+    // È·ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Â·ï¿½ï¿½
     if (req.target().starts_with("/rcon?")) {
-        // ½âÎöÇëÇóµÄURL²ÎÊý
+        // ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½URLï¿½ï¿½ï¿½ï¿½
         auto target         = req.target();
         auto params         = target.substr(target.find("?") + 1);
         auto decoded_params = url_decode(params);
 
-        // ÌáÈ¡²¢ÑéÖ¤`text`²ÎÊý
+        // ï¿½ï¿½È¡ï¿½ï¿½ï¿½ï¿½Ö¤`text`ï¿½ï¿½ï¿½ï¿½
         auto text_param = get_query_parameter(decoded_params, "text"); 
         if (text_param.empty()) {
             res = { http::status::bad_request, req.version() };
@@ -111,7 +125,7 @@ void handle_request(http::request<http::string_body> &&req, http::response<http:
             return;
         }
 
-        // ÕâÀïÊÇ´¦ÀíÃüÁîµÄµØ·½¡£½«ÃüÁî×÷ÎªÊä³öÏÔÊ¾¡£
+        // ï¿½ï¿½ï¿½ï¿½ï¿½Ç´ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ÄµØ·ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Îªï¿½ï¿½ï¿½ï¿½ï¿½Ê¾ï¿½ï¿½
         std::string command_result = "Received command: " + text_param; 
 
         if (text_param == "state") {
@@ -122,13 +136,13 @@ void handle_request(http::request<http::string_body> &&req, http::response<http:
         } else if (text_param.starts_with("broadcast")) {
             auto message_utf8 = text_param.substr(10);
 
-            // ½«UTF-8×Ö·û´®×ª»»ÎªUTF-16
+            // ï¿½ï¿½UTF-8ï¿½Ö·ï¿½ï¿½ï¿½×ªï¿½ï¿½ÎªUTF-16
             std::wstring message_utf16 = utf8_to_utf16(message_utf8);
 
-            // Ê¹ÓÃ×ª»»ºóµÄUTF-16×Ö·û´®
+            // Ê¹ï¿½ï¿½×ªï¿½ï¿½ï¿½ï¿½ï¿½UTF-16ï¿½Ö·ï¿½ï¿½ï¿½
             sdkContext->utility->SendSystemAnnounce(sdkContext->world, SDK::FString(message_utf16.c_str()));
 
-            // ½«¿í×Ö·û´®×ª»»ÎªÕ­×Ö·û´®ÓÃÓÚÈÕÖ¾
+            // ï¿½ï¿½ï¿½ï¿½ï¿½Ö·ï¿½ï¿½ï¿½×ªï¿½ï¿½ÎªÕ­ï¿½Ö·ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ö¾
             std::string message_narrow = wide_to_narrow(message_utf16);
             spdlog::info("[CMD::BroadcastChatMessage] {}", message_narrow);
         } else if (text_param == "gc") {
@@ -140,7 +154,7 @@ void handle_request(http::request<http::string_body> &&req, http::response<http:
         }
 
 
-        // ÉèÖÃHTTPÏìÓ¦
+        // ï¿½ï¿½ï¿½ï¿½HTTPï¿½ï¿½Ó¦
         res = { http::status::ok, req.version() };
         res.set(http::field::server, "Boost.Beast");
         res.set(http::field::content_type, "text/plain");
@@ -148,7 +162,7 @@ void handle_request(http::request<http::string_body> &&req, http::response<http:
         res.body() = command_result;
         res.prepare_payload();
     } else {
-        // ´¦ÀíÎ´ÖªÂ·ÓÉ
+        // ï¿½ï¿½ï¿½ï¿½Î´ÖªÂ·ï¿½ï¿½
         res = { http::status::not_found, req.version() };
         res.set(http::field::content_type, "text/plain");
         res.keep_alive(req.keep_alive());
@@ -159,7 +173,7 @@ void handle_request(http::request<http::string_body> &&req, http::response<http:
 
 
 void http_server(tcp::acceptor &acceptor, std::shared_ptr<SDKContext> sdkContext) {
-    // ´´½¨ÐÂµÄsocket
+    // ï¿½ï¿½ï¿½ï¿½ï¿½Âµï¿½socket
     auto socket = std::make_shared<tcp::socket>(acceptor.get_executor());
 
     acceptor.async_accept(*socket, [&acceptor, socket, sdkContext](boost::system::error_code ec) {
@@ -184,7 +198,7 @@ void http_server(tcp::acceptor &acceptor, std::shared_ptr<SDKContext> sdkContext
             spdlog::error("Error accepting connection: {}", ec.message());
         }
 
-        // ×¼±¸ÏÂÒ»¸öÁ¬½Ó
+        // ×¼ï¿½ï¿½ï¿½ï¿½Ò»ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
         http_server(acceptor, sdkContext);
     });
 }
@@ -196,11 +210,10 @@ void pal_loader_thread_start() {
 
     SDK::InitGObjects();
 
-    SDK::UEngine              *engine                 = nullptr;
-    SDK::UWorld               *world                  = nullptr;
-    SDK::UPalUtility          *utility                = nullptr;
-    SDK::APalGameStateInGame  *stateInGame            = nullptr;
-    ForceGarbageCollectionType ForceGarbageCollection = nullptr;
+    SDK::UEngine             *engine      = nullptr;
+    SDK::UWorld              *world       = nullptr;
+    SDK::UPalUtility         *utility     = nullptr;
+    SDK::APalGameStateInGame *stateInGame = nullptr;
 
     for (int i = 0; i < SDK::UObject::GObjects->Num(); i++) {
         SDK::UObject *object = SDK::UObject::GObjects->GetByIndex(i);
@@ -216,11 +229,14 @@ void pal_loader_thread_start() {
 
     world = *reinterpret_cast<SDK::UWorld **>(uintptr_t(GetImageBaseOffset()) + Offsets::GWorld);
 
-    ForceGarbageCollection = reinterpret_cast<ForceGarbageCollectionType>(uintptr_t(GetImageBaseOffset()) + Offsets::ForceGarbageCollection);
-
     utility = SDK::UPalUtility::GetDefaultObj();
 
     stateInGame = utility->GetPalGameStateInGame(world);
+
+    ForceGarbageCollection   = reinterpret_cast<ForceGarbageCollectionType>(uintptr_t(GetImageBaseOffset()) + Offsets::ForceGarbageCollection);
+    LowLevelGetRemoteAddress = reinterpret_cast<LowLevelGetRemoteAddressType>(uintptr_t(GetImageBaseOffset()) + Offsets::LowLevelGetRemoteAddress);
+    KickPlayer               = reinterpret_cast<KickPlayerType>(uintptr_t(GetImageBaseOffset()) + Offsets::KickPlayer);
+    GetEmptyFText            = reinterpret_cast<GetEmptyFTextType>(uintptr_t(GetImageBaseOffset()) + Offsets::GetEmptyFText);
 
     spdlog::info("Unreal::GObjects         = {:x}", uintptr_t(SDK::UObject::GObjects));
     spdlog::info("Unreal::GEngine          = {}", uintptr_t(engine));
@@ -229,11 +245,13 @@ void pal_loader_thread_start() {
     spdlog::info("PalGameStateInGame       = {:x}", uintptr_t(stateInGame));
     spdlog::info("IsDevelopmentBuild       = {}", utility->IsDevelopmentBuild());
 
+    install_hooks();
+
     // Now wo can do some magic!
 
     // Hook code removed, it's unstable
 
-    // Æô¶¯HTTP·þÎñÆ÷
+    // ï¿½ï¿½ï¿½ï¿½HTTPï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
 
      try {
             auto const      address = net::ip::make_address("127.0.0.1");
@@ -266,13 +284,73 @@ void pal_loader_thread_start() {
         } else if (userInput.starts_with("broadcast")) {
             auto message = userInput.substr(10);
 
+
             utility->SendSystemAnnounce(world, SDK::FString(std::wstring(message.begin(), message.end()).c_str()));
 
             spdlog::info("[CMD::BroadcastChatMessage] {}", message);
         } else if (userInput == "gc") {
             ForceGarbageCollection(engine, true);
-            
+
             spdlog::info("[CMD::ForceGarbageCollection] done");
+        } else if (userInput == "list") {
+            SDK::TArray<SDK::APalCharacter *> player_characters;
+
+            utility->GetAllPlayerCharacters(world, &player_characters);
+
+            if (player_characters.IsValid()) {
+                spdlog::info("[CMD::List] current {} player online", player_characters.Num());
+
+                for (int i = 0; i < player_characters.Num(); i++) {
+                    auto character = static_cast<SDK::APalPlayerCharacter *>(player_characters[i]);
+
+                    auto controller = static_cast<SDK::APlayerController *>(character->GetController());
+
+                    std::string address = std::string("[UNK]");
+
+                    if (controller->NetConnection) {
+                        auto fsaddress = LowLevelGetRemoteAddress(static_cast<SDK::UIpConnection *>(controller->NetConnection), true);
+
+                        if (fsaddress && fsaddress->IsValid() && fsaddress->Num() > 1) {
+                            address = fsaddress->ToString();
+                        }
+                    }
+
+                    auto state    = utility->GetPlayerStateByPlayer(character);
+                    auto raw_name = state->GetPlayerName();
+                    auto uid      = utility->GetPlayerUIDByActor(character);
+
+                    std::string name = utf16_to_local_codepage(raw_name.Data, raw_name.NumElements);
+
+                    spdlog::info("[CMD::List] {}, {:08x}, {}", name, static_cast<uint32_t>(uid.A), address);
+                }
+            }
+        } else if (userInput.starts_with("kick")) {
+            auto                              kick_uid = str_tolower(userInput.substr(5));
+            SDK::TArray<SDK::APalCharacter *> player_characters;
+            utility->GetAllPlayerCharacters(world, &player_characters);
+
+            if (player_characters.IsValid()) {
+                for (int i = 0; i < player_characters.Num(); i++) {
+                    char        hexuid[9] = {};
+                    auto        character = static_cast<SDK::APalPlayerCharacter *>(player_characters[i]);
+                    auto        uid       = utility->GetPlayerUIDByActor(character);
+                    auto        state     = utility->GetPlayerStateByPlayer(character);
+                    auto        raw_name  = state->GetPlayerName();
+                    std::string name      = utf16_to_local_codepage(raw_name.Data, raw_name.NumElements);
+
+                    sprintf_s(hexuid, "%08x", static_cast<uint32_t>(uid.A));
+
+                    if (kick_uid == std::string(hexuid)) {
+                        SDK::FText *reason = GetEmptyFText();
+
+                        auto kicked = KickPlayer(world, &uid, reason);
+
+                        if (kicked) {
+                            spdlog::info("[CMD::Kick] player {} kicked", name);
+                        }
+                    }
+                }
+            }
         } else {
             spdlog::info("[CMD::???] Unknown command");
         }

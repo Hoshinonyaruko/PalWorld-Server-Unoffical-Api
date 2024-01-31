@@ -111,7 +111,7 @@ target("pal-plugin-loader")
         add_syslinks("bcrypt.lib")
         add_syslinks("ole32.lib")
         add_syslinks("shell32.lib")
-        -- Ìí¼Ó /bigobj ºÍºöÂÔÌØ¶¨¾¯¸æµÄ±àÒëÑ¡Ïî
+        -- ï¿½ï¿½ï¿½ï¿½ /bigobj ï¿½Íºï¿½ï¿½ï¿½ï¿½Ø¶ï¿½ï¿½ï¿½ï¿½ï¿½Ä±ï¿½ï¿½ï¿½Ñ¡ï¿½ï¿½
         add_cxflags("/bigobj", "/wd4369", {force = true})
         add_cxxflags("/bigobj", "/wd4369", {force = true})
     end
@@ -119,16 +119,18 @@ target("pal-plugin-loader")
     add_includedirs(path.join(os.scriptdir(), "include/sdk/sdk"))
     add_includedirs(path.join(os.scriptdir(), "include/sdk"))
     add_includedirs(path.join(os.scriptdir(), "include"))
-    add_includedirs("C:/boost")  -- Ìæ»»ÎªÄãµÄBoost°²×°Â·¾¶
+    add_includedirs("C:/boost")  -- ï¿½æ»»Îªï¿½ï¿½ï¿½Boostï¿½ï¿½×°Â·ï¿½ï¿½
 
 
     if is_os("windows") then
         add_includedirs(path.join(os.scriptdir(), "include/os/windows/sdk"))
+        add_includedirs(path.join(os.scriptdir(), "include/os/windows"))
         add_files("src/os/windows/*.cpp")
     end
 
     add_files("src/*.cpp")
     add_files("src/sdk/*.cpp")
+
 
 
 
